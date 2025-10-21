@@ -19,15 +19,17 @@ mongoose.connect(process.env.MONGODB_URI)
 
 // 5. สร้าง Schema และ Model (ตัวอย่าง: โพสต์)
 // Schema คือ "พิมพ์เขียว" หรือโครงสร้างของข้อมูลใน collection
-const postSchema = new mongoose.Schema({
-  title: { type: String, required: true },
-  content: { type: String, required: true },
-  author: String,
-  createdAt: { type: Date, default: Date.now }
+// สร้าง Schema สำหรับ User
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true }, // ชื่อผู้ใช้ ห้ามซ้ำ
+  email: { type: String, required: true, unique: true },    // อีเมล ห้ามซ้ำ
+  fullName: String,
+  registeredAt: { type: Date, default: Date.now }
 });
 
 // Model คือ "ตัวแทน" ของ collection ที่ใช้ในการสร้าง, อ่าน, อัปเดต, ลบข้อมูล
-const Post = mongoose.model('Post', postSchema);
+// สร้าง Model สำหรับ User
+const User = mongoose.model('User', userSchema);
 
 
 // 6. สร้าง API Routes (Endpoints)
@@ -37,31 +39,28 @@ app.get('/', (req, res) => {
 });
 
 // GET: ดึงโพสต์ทั้งหมด
-app.get('/posts', async (req, res) => {
+// GET: ดึงผู้ใช้ทั้งหมด
+app.get('/users', async (req, res) => {
   try {
-    const posts = await Post.find();
-    res.status(200).json(posts);
+    const users = await User.find();
+    res.status(200).json(users);
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching posts', error: error });
+    res.status(500).json({ message: 'Error fetching users', error: error });
   }
 });
 
 // POST: สร้างโพสต์ใหม่
-app.post('/posts', async (req, res) => {
   // ดึงข้อมูลจาก body ของ request ที่แอป Flutter ส่งมา
-  const { title, content, author } = req.body;
-
-  const newPost = new Post({
-    title: title,
-    content: content,
-    author: author
-  });
+// POST: สร้างผู้ใช้ใหม่
+app.post('/users', async (req, res) => {
+  const { username, email, fullName } = req.body;
+  const newUser = new User({ username, email, fullName });
 
   try {
-    const savedPost = await newPost.save();
-    res.status(201).json(savedPost); // status 201 หมายถึง "Created"
+    const savedUser = await newUser.save();
+    res.status(201).json(savedUser);
   } catch (error) {
-    res.status(400).json({ message: 'Error creating post', error: error });
+    res.status(400).json({ message: 'Error creating user', error: error });
   }
 });
 
