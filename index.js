@@ -1,71 +1,100 @@
-// 1. Import Dependencies ที่จำเป็น
-require('dotenv').config(); // ทำให้เราสามารถใช้ตัวแปรในไฟล์ .env ได้
+// index.js
+
 const express = require('express');
 const mongoose = require('mongoose');
-const cors = require('cors');
+const cors = require('cors'); // 1. Import cors
+require('dotenv').config();
 
-// 2. ตั้งค่า Express App
 const app = express();
-const PORT = process.env.PORT || 3000; // Render จะกำหนด PORT ให้เอง แต่เราตั้งค่าสำรองไว้ที่ 3000
 
-// 3. Middlewares (ฟังก์ชันที่ทำงานก่อนที่ request จะถูกประมวลผล)
-app.use(cors()); // อนุญาตการเชื่อมต่อจากทุกที่
-app.use(express.json()); // ทำให้เซิร์ฟเวอร์เข้าใจข้อมูลที่ส่งมาในรูปแบบ JSON
+// --- Middleware ---
+app.use(cors()); // 2. Enable CORS for all routes
+app.use(express.json());
 
-// 4. เชื่อมต่อกับ MongoDB Atlas
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log("✅ MongoDB connected successfully!"))
-  .catch(err => console.error("❌ MongoDB connection error:", err));
+// --- Environment Variables ---
+const MONGODB_URI = process.env.MONGODB_URI;
+const PORT = process.env.PORT || 3000;
 
-// 5. สร้าง Schema และ Model (ตัวอย่าง: โพสต์)
-// Schema คือ "พิมพ์เขียว" หรือโครงสร้างของข้อมูลใน collection
-// สร้าง Schema สำหรับ User
-const userSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true }, // ชื่อผู้ใช้ ห้ามซ้ำ
-  email: { type: String, required: true, unique: true },    // อีเมล ห้ามซ้ำ
-  fullName: String,
-  registeredAt: { type: Date, default: Date.now }
-});
+if (!MONGODB_URI) {
+    console.error('FATAL ERROR: MONGODB_URI is not defined.');
+    process.exit(1);
+}
 
-// Model คือ "ตัวแทน" ของ collection ที่ใช้ในการสร้าง, อ่าน, อัปเดต, ลบข้อมูล
-// สร้าง Model สำหรับ User
-const User = mongoose.model('User', userSchema);
+// --- MongoDB Connection ---
+mongoose.connect(MONGODB_URI)
+    .then(() => console.log('Successfully connected to MongoDB Atlas!'))
+    .catch(err => {
+        console.error('MongoDB Connection Error:', err);
+        process.exit(1);
+    });
 
+// --- Mongoose Schema (ตามที่ออกแบบไว้) ---
+const unitValueSchema = new mongoose.Schema({ value: Number, unit: String }, { _id: false });
+const geoJsonPointSchema = new mongoose.Schema({ type: { type: String, enum: ['Point'], default: 'Point' }, coordinates: { type: [Number] } }, { _id: false });
+const addressSchema = new mongoose.Schema({ full_address: String, subdistrict: String, district: String, province: String, country: String, postal_code: String }, { _id: false });
 
-// 6. สร้าง API Routes (Endpoints)
-// Route สำหรับทดสอบว่าเซิร์ฟเวอร์ทำงานหรือไม่
+const SampleSchema = new mongoose.Schema({
+    sample_name: { type: String, required: true, unique: true, trim: true },
+    basic_info: {
+        title: { type: String, enum: ['Soil', 'Plant', 'Water', 'Insect'], required: true },
+        organism: { type: String, trim: true },
+        collection_date: { type: Date, default: Date.now },
+        geo_loc_name: { type: String, trim: true }
+    },
+    location_info: {
+        coordinates: geoJsonPointSchema,
+        address: addressSchema,
+        depth: unitValueSchema,
+        elevation: unitValueSchema,
+        environment_broad_scale: String,
+        environment_local_scale: String,
+        environment_medium: String
+    },
+    environmental_properties: {
+        ph: Number,
+        total_organic_carbon: unitValueSchema,
+        total_nitrogen: unitValueSchema,
+        soil_type: String,
+        drainage_class: String,
+        water_content: unitValueSchema
+    },
+    additional_info: {
+        description: String,
+        collection_method: String,
+        isolation_source: String,
+        samp_collect_device: String,
+        store_cond: String
+    }
+}, { timestamps: true });
+
+SampleSchema.index({ "location_info.coordinates": "2dsphere" });
+const Sample = mongoose.model('Sample', SampleSchema);
+
+// --- API Routes ---
 app.get('/', (req, res) => {
-  res.send('API Server is running!');
+    res.status(200).json({ message: "Welcome to the Sample Collection API!", status: "OK" });
 });
 
-// GET: ดึงโพสต์ทั้งหมด
-// GET: ดึงผู้ใช้ทั้งหมด
-app.get('/users', async (req, res) => {
-  try {
-    const users = await User.find();
-    res.status(200).json(users);
-  } catch (error) {
-    res.status(500).json({ message: 'Error fetching users', error: error });
-  }
+app.post('/samples', async (req, res) => {
+    try {
+        const newSample = new Sample(req.body);
+        await newSample.save();
+        res.status(201).json(newSample);
+    } catch (error) {
+        res.status(400).json({ message: "Failed to create sample", error: error.message });
+    }
 });
 
-// POST: สร้างโพสต์ใหม่
-  // ดึงข้อมูลจาก body ของ request ที่แอป Flutter ส่งมา
-// POST: สร้างผู้ใช้ใหม่
-app.post('/users', async (req, res) => {
-  const { username, email, fullName } = req.body;
-  const newUser = new User({ username, email, fullName });
-
-  try {
-    const savedUser = await newUser.save();
-    res.status(201).json(savedUser);
-  } catch (error) {
-    res.status(400).json({ message: 'Error creating user', error: error });
-  }
+app.get('/samples', async (req, res) => {
+    try {
+        const allSamples = await Sample.find();
+        res.status(200).json(allSamples);
+    } catch (error) {
+        res.status(500).json({ message: "Failed to get samples", error: error.message });
+    }
 });
 
-
-// 7. เริ่มรันเซิร์ฟเวอร์
+// --- Start Server ---
 app.listen(PORT, () => {
-  console.log(`🚀 Server is listening on port ${PORT}`);
+    console.log(`Server is running on port ${PORT}`);
 });
